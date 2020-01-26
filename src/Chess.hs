@@ -52,6 +52,10 @@ g@Game {_turn = t} #> (Move from to movetype) = flipTurn newGame
                 Passant -> passant t from to
                 _ -> movePiece from to
 
+(#!) :: Game -> Index -> Maybe Piece -- Retrieve a piece
+g #! ix = join $ (!?ix) $ getBoard $ _board g
+
+
 movePiece :: Index -> Index -> Board -> Board
 movePiece from to (Board b) = Board $ b // [(from, Just Empty), (to, b ! from)]
 

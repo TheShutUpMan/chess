@@ -3,7 +3,7 @@
 module CommandLine where
 import AI
 import Chess
-import Control.Monad.Loops (iterateM_)
+import MoveGeneration
 import Control.Monad.IO.Class (liftIO)
 import Data.Char (ord, chr)
 import qualified Data.Sequence as S
@@ -16,6 +16,7 @@ import System.Random
 
 commandLine :: IO Game
 commandLine = runInputT defaultSettings (iterateM_ runCommand startGame)
+    where iterateM_ f = let g x = f x >>= g in g
 
 runCommand :: Game -> InputT IO Game
 runCommand g = do

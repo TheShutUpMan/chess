@@ -8,11 +8,9 @@ module MoveGeneration (legalMoves, startGamePlay)
 import Chess
 import Data.Sequence (Seq((:<|)), ViewL(..), (><))
 import qualified Data.Sequence as S
-import Data.Vector ((!?), (!))
 import qualified Data.Vector as V
 import Data.Bifunctor (second)
 import Data.Maybe (fromMaybe, catMaybes)
-import Data.Foldable (find)
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IntSet (IntSet)
@@ -21,35 +19,42 @@ import Control.Monad (join)
 import Lens.Micro.TH (makeLenses)
 import Lens.Micro ((&), (%~))
 
+type Attacks = IntMap IntSet
+type Pins    = IntMap Index
 
 data GamePlay = GamePlay
     { _game       :: Game
     , _lastMove   :: Maybe Move    -- Needed for passant
     , _kings      :: (Index, Index)-- Index of king
-    , _attackedBy :: IntMap IntSet -- Set of all pieces attacking a square,
+    , _attackedBy :: Attacks       -- Set of all enemy pieces attacking a square,
                                    -- Not storing empty sets
-    , _defendedBy :: IntMap IntSet -- Set of all allied pieces attacking a square
-    , _pins       :: IntMap Index -- Can only be pinned by one piece
-    , _enemyPins  :: IntMap Index -- Pins on enemy king
+    , _defendedBy :: Attacks       -- Set of all allied pieces attacking a square
+    , _pins       :: Pins          -- Can only be pinned by one piece
+    , _enemyPins  :: Pins          -- Pins on enemy king
     }
 
 $(makeLenses ''GamePlay)
+
+-- Do legal move - legality is not verified
+(#!>) :: GamePlay -> Move -> GamePlay
+gp #!> m =
+    let g = _game gp
+        pins = _pins gp
+        p = g #! _from m
+     in updatePins m $ updateAttacks m $ 
+         case _piece <$> p of
+          Just Pawn -> undefined
+          Just Rook -> undefined 
+          Just Bishop -> undefined 
+          Just Knight -> undefined 
+          Just Queen -> undefined 
+          Just King -> undefined 
 
 getPin :: GamePlay -> Index -> Maybe Index
 getPin gp ix = _pins gp IntMap.!? ix
 
 getAttacks :: GamePlay -> Index -> IntSet
-getAttacks gp ix = case _attackedBy gp IntMap.!? ix of
-                     Nothing -> IntSet.empty
-                     Just a -> a
-
-(#!>) :: GamePlay -> Move -> GamePlay -- assumes move is legal
-gp #!> m =
-    let g = _game gp
-        pins = _pins gp
-        p = g #! _from m
-     in case _piece <$> p of
-          Just Pawn -> undefined
+getAttacks gp ix = fromMaybe IntSet.empty $ _attackedBy gp IntMap.!? ix
 
 getAllMoves :: GamePlay -> Seq Move
 getAllMoves gp =
@@ -90,6 +95,8 @@ legalMoves gp ix =
                     King -> legalKing gp ix
           _ -> Nothing
 
+-- Generate all pseudo-legal moves, which may put the king in check
+-- but are otherwise valid
 pseudoMoves :: Game -> Index -> Maybe (Seq Move)
 pseudoMoves g ix =
     let
@@ -107,8 +114,6 @@ pseudoMoves g ix =
                      Queen -> pseudoQueen g ix
                      King -> pseudoKing g ix
           _ -> Nothing
-
-
 
 annotateMoves :: Game -> Seq Index -> Seq (Index, MoveType)
 annotateMoves _ S.Empty = S.Empty
@@ -129,7 +134,7 @@ castPiece :: Game -> Index -> (Index -> Index) -> Seq (Index, MoveType)
 castPiece g@Game {_board=(Board b), _turn = turn} ix fn =
     let
         nextix = fn ix
-        square = join $ b !? nextix
+        square = join $ b V.!? nextix
      in case square of
           Nothing -> S.Empty
           Just Empty -> (nextix, Normal) :<| castPiece g nextix fn
@@ -253,9 +258,9 @@ legalPawn gp ix = S.fromList $ catMaybes $
                                        _ -> Nothing
                                 else Just (ix', Capture)
             checkEmpty ix' = if g#!ix' == Just Empty
-                                  then Just (ix', Normal) else Nothing
+                                then Just (ix', Normal) else Nothing
             checkDouble ix' prev = if g#!ix' == Just Empty && g#!prev == Just Empty
-                                  then Just (ix', PawnDouble) else Nothing
+                                      then Just (ix', PawnDouble) else Nothing
             notEnemy turn piece = piece == Empty || _colour piece == turn
 
 
@@ -263,25 +268,37 @@ findKing :: Game -> Index
 findKing Game{_board = b, _turn = t} = fromMaybe undefined $
     V.findIndex (\x -> x == Just (Piece King t)) (getBoard b)
 
-genAttacks :: Game -> IntMap IntSet
+-- Generate an attack table from scratch
+-- Not efficient, incrementally update attack table instead if possible
+genAttacks :: Game -> Attacks
 genAttacks g =
-    let
-        enemyAttacks = foldr (\x y -> fromMaybe S.Empty (pseudoMoves g x) >< y)
-                         S.Empty (S.fromList [2..93])
+    let enemyAttacks = foldr (\x y -> fromMaybe S.Empty (pseudoMoves g x) >< y)
+                             S.Empty (S.fromList [2..93])
+     in foldr (\(Move from to _) y ->
+                IntMap.insertWith IntSet.union to (IntSet.singleton from) y)
+              IntMap.empty enemyAttacks
+
+-- Incremental update of attack table after a single move
+updateAttacks :: Move -> Piece -> GamePlay -> Attacks
+updateAttacks (Move from to mtyp) Piece {_piece = p} gp@GamePlay {_game = g} =
+    let fromAttacks = pseudoMoves g from
+        toAttacks = pseudoMoves g to
      in undefined
 
-genPins :: Game -> Index -> IntMap IntSet -> IntMap Index
+-- Generate pins on the king from scratch
+genPins :: Game -> Index -> Attacks -> Pins
 genPins g kingIx attacks =
     let
         b = getBoard (_board g)
         -- Get (allied) pieces that would be captured by a given piece
-        getCaptures f = S.filter (\(_,m) -> m == Capture) (f (flipTurn g) kingIx)
+        getCaptures f = S.filter (\(_,m) -> m == Capture)
+                                 (f (flipTurn g) kingIx)
         -- Pieces that can be pinned by rook cast
         rookCasts = fst <$> getCaptures pseudoRook
         -- Pieces that are pinning the king by rook cast
         rookQueen = (\(a,s) ->
                         (a, IntSet.filter
-                            (\ix -> sameRowCol a ix && case b!ix of
+                            (\ix -> sameRowCol a ix && case b V.! ix of
                                      Just (Piece Queen _) -> True
                                      Just (Piece Rook _) -> True
                                      _ -> False) s))
@@ -291,12 +308,13 @@ genPins g kingIx attacks =
         -- Pieces that are pinning the king by bishop cast
         bishopQueen = (\(a, s) ->
                           (a, IntSet.filter
-                                (\ix -> sameDiagonal a ix && case b!ix of
+                                (\ix -> sameDiagonal a ix && case b V.! ix of
                                       Just (Piece Queen _) -> True
                                       Just (Piece Bishop _) -> True
                                       _ -> False) s))
                               . (\x -> (x, fetchAttacks attacks x)) <$> bishopCasts
      in IntMap.fromList $
+         -- Convert (Index, IntSet) to [(Index, Index)]
          concatMap (\(a,s) -> (a,) <$> IntSet.toList s) bishopQueen ++
          concatMap (\(a,s) -> (a,) <$> IntSet.toList s) rookQueen
     where
@@ -306,6 +324,14 @@ genPins g kingIx attacks =
               let rows = (a `mod` 12 - b `mod` 12)
                   cols = (a `div` 12 - b `div` 12)
                in abs rows == abs cols
+
+updatePins :: Move -> GamePlay -> Pins
+updatePins m@(Move from to _) GamePlay {_game = g, _attackedBy=a} =
+    case g #! from of
+      Just (Piece King _) -> genPins (g #> m) from a
+      Just (Piece a _) -> undefined
+      _ -> undefined
+
 
 toGamePlay :: Game -> GamePlay
 toGamePlay g =

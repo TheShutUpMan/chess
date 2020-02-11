@@ -32,34 +32,34 @@ pieceValue turn piece =
 
 data Minimax = Min | Max deriving (Eq, Show)
 
-getAIMove :: (Game -> Int) -> Game -> Move
-getAIMove evalFun g =
-    let moves = getAllMoves g
-        successors = (g #>) <$> moves
+getAIMove :: (GamePlay -> Int) -> GamePlay -> Move
+getAIMove evalFun gp =
+    let moves = getAllMoves gp
+        successors = (gp #!>) <$> moves
      in snd $ maximum $ S.zip (fmap evalFun successors) moves 
 
-minimaxMove :: Int -> Game -> Move
+minimaxMove :: Int -> GamePlay -> Move
 minimaxMove depth = getAIMove $ minimaxValue Max depth
      
-minimaxValue :: Minimax -> Int -> Game -> Int
-minimaxValue turn depth g =
-    if simpleCheckmate g
+minimaxValue :: Minimax -> Int -> GamePlay -> Int
+minimaxValue turn depth gp@GamePlay{_game=g} =
+    if checkmate gp
     then case turn of
              Max -> minBound
              Min -> maxBound
     else case depth of
-      0 -> (if turn == Max then -1 else 1) * evalGame g
-      n -> let states = (g #>) <$> getAllMoves g
+      0 -> (if turn == Max then -1 else 1) * evalGame (g)
+      n -> let states = (gp #!>) <$> getAllMoves gp
             in case turn of
                  Max -> maximum $ fmap (minimaxValue Min (n-1)) states
                  Min -> minimum $ fmap (minimaxValue Max (n-1)) states
 
-alphaBetaMove :: Int -> Game -> Move
+alphaBetaMove :: Int -> GamePlay -> Move
 alphaBetaMove depth = getAIMove $ alphaBetaValue Max minBound maxBound depth
 
-alphaBetaValue :: Minimax -> Int -> Int -> Int -> Game -> Int
-alphaBetaValue turn alpha beta depth g =
-    if simpleCheckmate g
+alphaBetaValue :: Minimax -> Int -> Int -> Int -> GamePlay -> Int
+alphaBetaValue turn alpha beta depth gp@GamePlay{_game=g} =
+    if checkmate gp
     then case turn of
              Max -> minBound
              Min -> maxBound
@@ -67,33 +67,33 @@ alphaBetaValue turn alpha beta depth g =
       0 -> case turn of
              Max -> evalGame (flipTurn g)
              Min -> evalGame g
-      n -> let moves = getAllMoves g
+      n -> let moves = getAllMoves gp
             in case turn of
                  Max -> either snd snd $ foldM evalMax (alpha, minBound) moves
                  Min -> either snd snd $ foldM evalMin (beta, maxBound) moves
              where
                  evalMax (a, val) move = 
-                     let g' = g #> move
+                     let g' = gp #!> move
                          val' = max val (alphaBetaValue Min a beta (depth - 1) g')
                          alpha' = max a val'
                       in if alpha' >= beta
                            then Left (alpha', val')
                            else Right (alpha', val')
                  evalMin (b, val) move =
-                     let g' = g #> move
+                     let g' = gp #!> move
                          val' = min val (alphaBetaValue Max alpha b (depth - 1) g')
                          beta' = min val' b
                       in if alpha >= beta'
                            then Left (beta', val')
                            else Right (beta', val')
 
-randomMove :: RandomGen g => g -> Game -> (Move, g)
-randomMove gen g = (moves `S.index` ix, gen')
+randomMove :: RandomGen g => g -> GamePlay -> (Move, g)
+randomMove gen gp = (moves `S.index` ix, gen')
     where 
-        moves = getAllMoves g
+        moves = getAllMoves gp
         (ix, gen') = randomR (0, length moves - 1) gen
 
-randomGame :: RandomGen g => g -> Game -> (Bool, g)
+randomGame :: RandomGen g => g -> GamePlay -> (Bool, g)
 randomGame gen g = undefined
 
 mctsMove :: RandomGen g => g -> Int -> Game -> Move

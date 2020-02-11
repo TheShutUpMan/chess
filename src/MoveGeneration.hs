@@ -2,8 +2,13 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE TupleSections #-}
-module MoveGeneration (legalMoves, startGamePlay)
-    where
+module MoveGeneration
+    ( getAllMoves
+    , startGP
+    , checkmate
+    , (#!>)
+    , GamePlay(..)
+    ) where
 
 import Chess
 import Data.Sequence (Seq((:<|)), ViewL(..), (><))
@@ -37,18 +42,17 @@ $(makeLenses ''GamePlay)
 
 -- Do legal move - legality is not verified
 (#!>) :: GamePlay -> Move -> GamePlay
-gp #!> m =
-    let g = _game gp
-        pins = _pins gp
-        p = g #! _from m
-     in updatePins m $ updateAttacks m $ 
-         case _piece <$> p of
-          Just Pawn -> undefined
-          Just Rook -> undefined 
-          Just Bishop -> undefined 
-          Just Knight -> undefined 
-          Just Queen -> undefined 
-          Just King -> undefined 
+gp@(GamePlay g _ kings attacks defenses pins enemyPins) #!> m =
+     GamePlay newG (Just m) (enemyKing, ourKing) attacks' defenses' pins' enemyPins'
+    where 
+        newG = g #> m
+        (enemyKing, ourKing) = kings
+        Just p = g #! _from m
+        attacks'  = genAttacks newG
+        defenses' = genAttacks (flipTurn newG)
+        pins' = genPins newG enemyKing attacks'
+        enemyPins' = genPins (flipTurn newG) ourKing defenses'
+
 
 getPin :: GamePlay -> Index -> Maybe Index
 getPin gp ix = _pins gp IntMap.!? ix
@@ -62,10 +66,17 @@ getAllMoves gp =
         in if attacks == IntSet.empty
               then foldr (\x y -> fromMaybe S.Empty (legalMoves gp x) >< y)
                          S.Empty (S.fromList [2..93])
-              else checkMoveGen gp attacks
+              else --checkMoveGen gp attacks
+                foldr (\x y -> fromMaybe S.Empty (legalMoves gp x) >< y)
+                         S.Empty (S.fromList [2..93])
 
+checkmate :: GamePlay -> Bool
+checkmate = (== S.empty) . getAllMoves
+
+-- Generate moves when king is in check
+-- This is not verified
 checkMoveGen :: GamePlay -> IntSet -> Seq Move
-checkMoveGen gp attacks = -- assumes king is in check
+checkMoveGen gp attacks = 
     if IntSet.size attacks == 2 -- double check
        then toMove k <$> moveKing gp k
        else undefined
@@ -77,9 +88,8 @@ toMove from (to, mtyp) = Move from to mtyp
 
 -- generate legal moves when out of check
 legalMoves :: GamePlay -> Index -> Maybe (Seq Move)
-legalMoves gp ix =
+legalMoves gp@GamePlay{_game=g} ix =
     let
-        g = _game gp
         piece = g#!ix
         turn = _turn g
      in case piece of
@@ -166,7 +176,6 @@ rookMoves = S.fromList [(+1), (+12),  subtract 1, subtract 12]
 
 pseudoRook :: Game -> Index -> Seq (Index, MoveType)
 pseudoRook g ix = foldr ((><) . castPiece g ix) S.Empty rookMoves
-
 
 legalRook :: GamePlay -> Index -> Seq (Index, MoveType)
 legalRook gp ix =
@@ -280,9 +289,12 @@ genAttacks g =
 
 -- Incremental update of attack table after a single move
 updateAttacks :: Move -> Piece -> GamePlay -> Attacks
-updateAttacks (Move from to mtyp) Piece {_piece = p} gp@GamePlay {_game = g} =
+updateAttacks
+    m@(Move from to mtyp)
+    Piece {_piece = p}
+    gp@GamePlay {_game = g} =
     let fromAttacks = pseudoMoves g from
-        toAttacks = pseudoMoves g to
+        toAttacks = pseudoMoves (g #> m) to
      in undefined
 
 -- Generate pins on the king from scratch
@@ -348,4 +360,4 @@ toGamePlay g =
             , _enemyPins = genPins flipG (findKing flipG) attacks
             }
 
-startGamePlay = toGamePlay startGame
+startGP = toGamePlay startGame

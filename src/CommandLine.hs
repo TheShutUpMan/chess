@@ -25,7 +25,7 @@ runCommand gp@GamePlay{_game = g} = do
     case inp of
       Nothing -> return gp 
       Just "p" -> outputStrLn
-        (show $ getAllMoves gp)  >> return gp 
+        (show $ toMoveStr <$> getAllMoves gp)  >> return gp 
       Just "m" -> 
           let move = alphaBetaMove 4 gp
            in return $ gp #!> move
@@ -43,11 +43,12 @@ type Parser = Parsec Void String
 
 parseAN :: Parser ((Char, Char), (Char, Char))
 parseAN = do
-    c1 <- satisfy (\x -> let o = ord x in 97 <= o && o <= 104)
-    r1 <- satisfy (\x -> let o = ord x in 49 <= o && o <= 56)
-    c2 <- satisfy (\x -> let o = ord x in 97 <= o && o <= 104)
-    r2 <- satisfy (\x -> let o = ord x in 49 <= o && o <= 56)
+    c1 <- satisfy $ between 97 104
+    r1 <- satisfy $ between 49 56
+    c2 <- satisfy $ between 97 104
+    r2 <- satisfy $ between 49 56
     return ((c1, r1), (c2, r2))
+        where between l u x = let o = ord x in l <= o && o <= u
 
 toMove :: GamePlay -> ((Char, Char), (Char, Char)) -> Maybe Move
 toMove gp ((fromc, fromr), (toc, tor)) =
@@ -59,10 +60,10 @@ toMove gp ((fromc, fromr), (toc, tor)) =
 
 toMoveStr :: Move -> String
 toMoveStr (Move from to _) =
-    let frow = chr $ (from `mod` 12) + 95
-        fcol = chr $ ((from - 2) `div` 12) + 53
-        trow = chr $ (to `mod` 12) + 95
-        tcol = chr $ ((to - 2) `div` 12) + 53
+    let fcol = chr $ (from `mod` 12) + 95
+        frow = chr $ abs ((from `div` 12) - 7) + 49
+        tcol = chr $ (to `mod` 12) + 95
+        trow = chr $ abs ((to `div` 12) - 7) + 49
     in [fcol, frow, tcol, trow]
 
 matchMove :: GamePlay -> Index -> Index -> Maybe Move

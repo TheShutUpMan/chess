@@ -46,7 +46,7 @@ gp@(GamePlay g _ kings attacks defenses pins enemyPins) #!> m =
      GamePlay newG (Just m) (enemyKing, ourKing) attacks' defenses' pins' enemyPins'
     where 
         newG = g #> m
-        (enemyKing, ourKing) = kings
+        (ourKing, enemyKing) = kings
         Just p = g #! _from m
         attacks'  = genAttacks newG
         defenses' = genAttacks (flipTurn newG)
@@ -68,7 +68,7 @@ getAllMoves gp =
                          S.Empty (S.fromList [2..93])
               else --checkMoveGen gp attacks
                 foldr (\x y -> fromMaybe S.Empty (legalMoves gp x) >< y)
-                         S.Empty (S.fromList [2..93])
+                         S.Empty (S.fromList [1..93])
 
 checkmate :: GamePlay -> Bool
 checkmate = (== S.empty) . getAllMoves
@@ -243,33 +243,37 @@ legalPawn gp ix = S.fromList $ catMaybes $
                  | p == ix - 11 || p == ix - 13 -> -- Can capture
                      [checkEnemy p]
                  | otherwise -> []
-       else
+       else -- Black's turn
          case getPin gp ix of
            Nothing -> [checkEnemy (ix+11),
                        checkEmpty (ix+12),
                        checkEnemy (ix+13)] ++
-                      [checkDouble (ix+24) (ix+12)| ix `div` 12 == 6]
+                      [checkDouble (ix+24) (ix+12)| ix `div` 12 == 1]
            Just p -> if
                  | p `mod` 12 == ix `mod` 12 -> -- Pinned by rook or queen
                      checkEmpty (ix+12) :
-                     [checkDouble (ix+24) (ix+12) | ix `div` 12 == 6]
+                     [checkDouble (ix+24) (ix+12) | ix `div` 12 == 1]
                  | p == ix + 11 || p == ix + 13 -> -- Can capture
                      [checkEnemy p]
                  | otherwise -> []
         where
             g = _game gp
-            checkEnemy ix' = if maybe True (notEnemy $ _turn g) (g#!ix')
-                                then case _lastMove gp of
-                                       Just (Move _ to PawnDouble) ->
-                                           if ix' `mod` 12 == to `mod` 12
-                                              then Just (ix', Passant)
-                                              else Nothing
-                                       _ -> Nothing
-                                else Just (ix', Capture)
-            checkEmpty ix' = if g#!ix' == Just Empty
-                                then Just (ix', Normal) else Nothing
-            checkDouble ix' prev = if g#!ix' == Just Empty && g#!prev == Just Empty
-                                      then Just (ix', PawnDouble) else Nothing
+            checkEnemy ix' =
+                if maybe True (notEnemy $ _turn g) (g#!ix')
+                   then case _lastMove gp of
+                          Just (Move _ to PawnDouble) ->
+                              if ix' `mod` 12 == to `mod` 12
+                                 && abs (ix' `div` 12 - to `div` 12) == 1
+                                 then Just (ix', Passant)
+                                 else Nothing
+                          _ -> Nothing
+                   else Just (ix', Capture)
+            checkEmpty ix' =
+                if g#!ix' == Just Empty
+                   then Just (ix', Normal) else Nothing
+            checkDouble ix' prev =
+                if g#!ix' == Just Empty && g#!prev == Just Empty
+                   then Just (ix', PawnDouble) else Nothing
             notEnemy turn piece = piece == Empty || _colour piece == turn
 
 

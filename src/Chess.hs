@@ -12,6 +12,7 @@ import qualified Data.Vector as V
 import Data.Sequence (Seq((:<|)), (><), ViewL(..))
 import qualified Data.Sequence as S
 import qualified Data.Text as T
+import Data.Char (chr)
 
 {- Chess datatype definitions -}
 
@@ -24,7 +25,7 @@ data Move = Move
     { _from     :: Index
     , _to       :: Index
     , _movetype :: MoveType
-    } deriving (Eq, Show, Ord)
+    } deriving (Eq, Ord)
     
 data Piece = Piece
     { _piece :: PieceType
@@ -106,6 +107,16 @@ instance Show Board where
             addCols = zipWith T.cons "87654321" . T.chunksOf 8
             addRows = flip T.append "\n  a b c d e f g h"
             formatBoard = addRows . T.intercalate "\n" . fmap (T.intersperse ' ') . addCols
+
+instance Show Move where
+    show (Move from to mtyp) =
+     let fcol = chr $ (from `mod` 12) + 95
+         frow = chr $ abs ((from `div` 12) - 7) + 49
+         tcol = chr $ (to `mod` 12) + 95
+         trow = chr $ abs ((to `div` 12) - 7) + 49
+      in if mtyp == Capture
+            then [fcol, frow, 'x', tcol, trow] 
+            else [fcol, frow, tcol, trow]
 
 startBoard :: Board
 startBoard = Board $ V.fromList [

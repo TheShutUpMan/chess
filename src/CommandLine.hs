@@ -4,7 +4,7 @@ import AI
 import Chess
 import MoveGeneration
 import Control.Monad.IO.Class (liftIO)
-import Data.Char (ord, chr)
+import Data.Char (ord)
 import qualified Data.Sequence as S
 import Data.Void
 import qualified Data.Text as T
@@ -25,7 +25,7 @@ runCommand gp@GamePlay{_game = g} = do
     case inp of
       Nothing -> return gp 
       Just "p" -> outputStrLn
-        (show $ toMoveStr <$> getAllMoves gp)  >> return gp 
+        (show $ show <$> getAllMoves gp)  >> return gp 
       Just "m" -> 
           let move = alphaBetaMove 4 gp
            in return $ gp #!> move
@@ -57,14 +57,6 @@ toMove gp ((fromc, fromr), (toc, tor)) =
         tcol = ord toc - 97
         trow = (abs (ord tor - 56) * 12) + 2
      in matchMove gp (fcol+frow) (tcol+trow)
-
-toMoveStr :: Move -> String
-toMoveStr (Move from to _) =
-    let fcol = chr $ (from `mod` 12) + 95
-        frow = chr $ abs ((from `div` 12) - 7) + 49
-        tcol = chr $ (to `mod` 12) + 95
-        trow = chr $ abs ((to `div` 12) - 7) + 49
-    in [fcol, frow, tcol, trow]
 
 matchMove :: GamePlay -> Index -> Index -> Maybe Move
 matchMove g f t =
